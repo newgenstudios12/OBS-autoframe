@@ -1,0 +1,8 @@
+build/
+build-*/
+build-tests/
+obs-template/
+release/
+.deps/
+*.dll
+*.pdb

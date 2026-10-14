@@ -1,0 +1,80 @@
+name: Build AutoFrame Windows DLL
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'src/**'
+      - 'tests/**'
+      - 'CMakeLists.txt'
+      - 'scripts/**'
+      - '.github/workflows/build-windows.yml'
+permissions:
+  contents: read
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - name: Check out AutoFrame source
+        uses: actions/checkout@v4
+      - name: Check out official OBS plugin template
+        uses: actions/checkout@v4
+        with:
+          repository: obsproject/obs-plugintemplate
+          ref: master
+          path: obs-template
+      - name: Confirm Visual Studio and build prerequisites
+        shell: pwsh
+        run: |
+          cmake --version
+          $vcpkg = if ($env:VCPKG_INSTALLATION_ROOT) { $env:VCPKG_INSTALLATION_ROOT } else { 'C:\vcpkg' }
+          if (-not (Test-Path "$vcpkg/vcpkg.exe")) { throw "vcpkg not found at $vcpkg" }
+          "VCPKG_ROOT=$vcpkg" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+      - name: Run AutoFrame tracking/framing tests on Windows
+        shell: pwsh
+        run: |
+          cmake -S . -B build-tests -G 'Visual Studio 17 2022' -A x64 -DAUTOFRAME_BUILD_FILTER=OFF -DBUILD_TESTING=ON
+          if ($LASTEXITCODE -ne 0) { throw 'Test configuration failed' }
+          cmake --build build-tests --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'Unit test compilation failed' }
+          ctest --test-dir build-tests --config Release --output-on-failure
+          if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed' }
+      - name: Install statically-linked OpenCV C++ dependencies
+        shell: pwsh
+        run: |
+          & "$env:VCPKG_ROOT/vcpkg.exe" install 'opencv4[core,imgproc,objdetect,dnn]:x64-windows-static'
+          if ($LASTEXITCODE -ne 0) { throw 'OpenCV vcpkg installation failed' }
+      - name: Integrate AutoFrame with official OBS plugin build system
+        shell: pwsh
+        run: ./scripts/Prepare-Obs-Template.ps1
+      - name: Compile native Windows plugin DLL
+        shell: pwsh
+        working-directory: obs-template
+        run: |
+          $toolchain = (Join-Path $env:VCPKG_ROOT 'scripts/buildsystems/vcpkg.cmake') -replace '\\','/'
+          cmake --preset windows-ci-x64 "-DCMAKE_TOOLCHAIN_FILE=$toolchain" -DVCPKG_TARGET_TRIPLET=x64-windows-static -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF
+          if ($LASTEXITCODE -ne 0) { throw 'OBS plugin CMake configuration failed' }
+          cmake --build --preset windows-x64 --config Release --parallel 2
+          if ($LASTEXITCODE -ne 0) { throw 'DLL compilation failed' }
+      - name: Verify PE DLL and assemble manual-install package
+        shell: pwsh
+        run: |
+          $found = @(Get-ChildItem 'obs-template/build_x64' -Recurse -File -Filter 'obs-autoframe.dll')
+          if ($found.Count -ne 1) { throw "Expected one built obs-autoframe.dll, found $($found.Count)" }
+          $dll = $found[0].FullName
+          $pe = [System.IO.File]::ReadAllBytes($dll)
+          if ($pe.Length -lt 1024 -or $pe[0] -ne 0x4D -or $pe[1] -ne 0x5A) { throw 'Invalid Windows PE DLL' }
+          $offset = [BitConverter]::ToInt32($pe,0x3c)
+          if ($offset -lt 64 -or $offset+4 -ge $pe.Length -or [System.Text.Encoding]::ASCII.GetString($pe,$offset,4) -ne "PE`0`0") { throw 'Invalid PE header' }
+          $dest = 'release/obs-autoframe/bin/64bit'
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          Copy-Item $dll -Destination $dest
+          New-Item -ItemType Directory -Force -Path 'release/obs-autoframe/data/locale' | Out-Null
+          Copy-Item 'obs-template/data/locale/en-US.ini' -Destination 'release/obs-autoframe/data/locale/en-US.ini'
+          Write-Host "Windows DLL built and PE verified: $dll ($($pe.Length) bytes)"
+      - name: Upload OBS plugin manual-install ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: OBS-AutoFrame-Windows-x64-v0.2
+          path: release/obs-autoframe/
+          if-no-files-found: error
