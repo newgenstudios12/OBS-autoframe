@@ -37,7 +37,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Test configuration failed' }
           cmake --build build-tests --config Release --parallel 2
           if ($LASTEXITCODE -ne 0) { throw 'Unit test compilation failed' }
-          ctest --test-dir build-tests --config Release --output-on-failure
+          ctest --test-dir build-tests -C Release --output-on-failure
           if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed' }
       - name: Install statically-linked OpenCV C++ dependencies
         shell: pwsh
