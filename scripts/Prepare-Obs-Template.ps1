@@ -23,7 +23,18 @@ $cmake = $cmake.Replace('src/plugin-main.c', 'src/plugin.cpp')
 # When vcpkg is the top-level toolchain, the SDK's prefix can be missed.
 # Discover its *installed* config only after the template's include(defaults).
 $libobsLookup = @'
-# Explicit libobs CMake config discovery for the Windows OBS template.
+# Explicit OBS CMake dependency discovery for the Windows template.
+# include(defaults) fetches OBS deps, but vcpkg's find_package shim can
+# miss these prefixes. Make every OBS dependency prefix available first.
+file(GLOB _af_prefix_candidates LIST_DIRECTORIES true
+     "${CMAKE_CURRENT_SOURCE_DIR}/.deps/obs-deps-*-x64")
+foreach(_af_prefix IN LISTS _af_prefix_candidates)
+  if(IS_DIRECTORY "${_af_prefix}")
+    list(PREPEND CMAKE_PREFIX_PATH "${_af_prefix}")
+    message(STATUS "AutoFrame: added OBS dependency prefix: ${_af_prefix}")
+  endif()
+endforeach()
+list(REMOVE_DUPLICATES CMAKE_PREFIX_PATH)
 # This runs after include(defaults), which provisions .deps.
 file(GLOB_RECURSE _af_obs_configs LIST_DIRECTORIES false
      "${CMAKE_CURRENT_SOURCE_DIR}/.deps/*libobsConfig.cmake"
