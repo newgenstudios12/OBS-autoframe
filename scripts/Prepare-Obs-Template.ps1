@@ -19,6 +19,29 @@ Copy-Item -Path "$project/src/*.hpp" -Destination "$template/src" -Force
 $cmake = Get-Content (Join-Path $template 'CMakeLists.txt') -Raw
 if (-not $cmake.Contains('src/plugin-main.c')) { throw 'Unexpected upstream OBS plugin template CMakeLists layout.' }
 $cmake = $cmake.Replace('src/plugin-main.c', 'src/plugin.cpp')
+# OBS's template bootstrap builds and installs libobs under obs-template/.deps.
+# When vcpkg is the top-level toolchain, the SDK's prefix can be missed.
+# Discover its *installed* config only after the template's include(defaults).
+$libobsLookup = @'
+# Explicit libobs CMake config discovery for the Windows OBS template.
+# This runs after include(defaults), which provisions .deps.
+file(GLOB_RECURSE _af_obs_configs LIST_DIRECTORIES false
+     "${CMAKE_CURRENT_SOURCE_DIR}/.deps/*libobsConfig.cmake"
+     "${CMAKE_CURRENT_SOURCE_DIR}/.deps/*libobs-config.cmake")
+if(_af_obs_configs)
+  list(GET _af_obs_configs 0 _af_obs_config)
+  get_filename_component(_af_libobs_dir "${_af_obs_config}" DIRECTORY)
+  set(libobs_DIR "${_af_libobs_dir}" CACHE PATH "AutoFrame OBS SDK config" FORCE)
+  message(STATUS "AutoFrame: found libobs SDK config: ${_af_obs_config}")
+else()
+  message(WARNING "AutoFrame: no installed libobs config found inside .deps; inspect the SDK installation.")
+endif()
+find_package(libobs REQUIRED)
+'@
+if (-not $cmake.Contains('find_package(libobs REQUIRED)')) {
+    throw 'Could not find the official plugin template libobs package lookup.'
+}
+$cmake = $cmake.Replace('find_package(libobs REQUIRED)', $libobsLookup.Trim())
 $cmake += @'
 
 # OBS AutoFrame native tracking dependencies.
