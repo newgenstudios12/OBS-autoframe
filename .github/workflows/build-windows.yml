@@ -39,9 +39,16 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Unit test compilation failed' }
           ctest --test-dir build-tests -C Release --output-on-failure
           if ($LASTEXITCODE -ne 0) { throw 'Unit tests failed' }
+      - name: Restore Windows OpenCV binary cache
+        uses: actions/cache@v4
+        with:
+          path: vcpkg-binary-cache
+          key: autoframe-win2022-opencv4-static-2026-10
       - name: Install statically-linked OpenCV C++ dependencies
         shell: pwsh
         run: |
+          $env:VCPKG_DEFAULT_BINARY_CACHE = Join-Path $env:GITHUB_WORKSPACE 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Force -Path $env:VCPKG_DEFAULT_BINARY_CACHE | Out-Null
           & "$env:VCPKG_ROOT/vcpkg.exe" install 'opencv4[dnn]:x64-windows-static'
           if ($LASTEXITCODE -ne 0) { throw 'OpenCV vcpkg installation failed' }
       - name: Integrate AutoFrame with official OBS plugin build system
@@ -59,9 +66,16 @@ jobs:
       - name: Verify PE DLL and assemble manual-install package
         shell: pwsh
         run: |
-          $found = @(Get-ChildItem 'obs-template/build_x64' -Recurse -File -Filter 'obs-autoframe.dll')
-          if ($found.Count -ne 1) { throw "Expected one built obs-autoframe.dll, found $($found.Count)" }
-          $dll = $found[0].FullName
+          # CMake's OBS template intentionally copies the DLL into rundir as
+          # well as its Release build directory; both copies are valid.
+          $preferred = 'obs-template/build_x64/Release/obs-autoframe.dll'
+          if (Test-Path $preferred) {
+            $dll = (Resolve-Path $preferred).Path
+          } else {
+            $found = @(Get-ChildItem 'obs-template/build_x64' -Recurse -File -Filter 'obs-autoframe.dll')
+            if ($found.Count -eq 0) { throw 'No obs-autoframe.dll found after compilation' }
+            $dll = $found[0].FullName
+          }
           $pe = [System.IO.File]::ReadAllBytes($dll)
           if ($pe.Length -lt 1024 -or $pe[0] -ne 0x4D -or $pe[1] -ne 0x5A) { throw 'Invalid Windows PE DLL' }
           $offset = [BitConverter]::ToInt32($pe,0x3c)
