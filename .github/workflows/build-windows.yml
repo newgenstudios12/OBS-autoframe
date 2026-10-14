@@ -42,7 +42,7 @@ jobs:
       - name: Install statically-linked OpenCV C++ dependencies
         shell: pwsh
         run: |
-          & "$env:VCPKG_ROOT/vcpkg.exe" install 'opencv4[core,imgproc,objdetect,dnn]:x64-windows-static'
+          & "$env:VCPKG_ROOT/vcpkg.exe" install 'opencv4[dnn]:x64-windows-static'
           if ($LASTEXITCODE -ne 0) { throw 'OpenCV vcpkg installation failed' }
       - name: Integrate AutoFrame with official OBS plugin build system
         shell: pwsh
