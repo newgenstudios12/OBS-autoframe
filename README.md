@@ -1,23 +1,41 @@
-# OBS AutoFrame — Windows DLL cloud-build source kit (v0.2)
+# OBS AutoFrame v0.2 — Experimental Native Video Filter
 
-**This ZIP is not a compiled Windows DLL.** It adds a GitHub Actions build workflow to our C++ OBS filter source, so you can build on GitHub's Windows runner without installing Python, C++, Visual Studio or OpenCV on your PC. The Windows workflow has **not been executed or validated** yet; the source-only C++ tests have passed on Linux.
+OBS AutoFrame is a Windows-targeted OBS Studio filter that uses body detection to digitally pan and zoom around a selected person. This is **experimental**; the Windows DLL build and live OBS compatibility still require validation.
 
-## Build without installing developer tools
+## Features
 
-1. Sign into GitHub, create a new repository (e.g., `obs-autoframe`) and select **Add file → Upload files**. Extract this ZIP first, then upload its contents **including the `.github` directory**. GitHub hides folders beginning with a dot on some file pickers: use drag-and-drop for the complete extracted directory contents, or use GitHub Desktop.
-2. Commit the files to the default branch. Open **Actions → Build AutoFrame Windows DLL → Run workflow** if the workflow did not run automatically. This uses a **Windows 2022 hosted runner** and may take a while (OpenCV/OBS dependency compilation).
-3. If the action is green, open the completed build and download the `OBS-AutoFrame-Windows-x64-v0.2` artifact ZIP. Do not download the source ZIP as a substitute for this artifact.
-4. Shut down OBS. Extract the artifact into `C:\ProgramData\obs-studio\plugins\obs-autoframe\`, ensuring `obs-autoframe.dll` is under `bin\64bit\`. Restart OBS. Add the **AutoFrame (Full-Body Tracker) [Preview]** effect filter to a camera source.
-5. If the filter doesn't appear or OBS reports a missing DLL, use **Help → Log Files → View Current Log**. This build hasn't undergone an OBS runtime/load test, and additional runtime dependencies or code fixes may be necessary.
+- Full-body detection: OpenCV HOG fallback; optional YOLOv8/YOLO11 ONNX person detector (model not included)
+- Multiple people with tracked IDs and person selection
+- Auto-follow, center, leftmost, rightmost, largest, and lock-to-selected-person modes
+- Custom subject position, headroom, waist-up/full-body framing, and maximum zoom
+- Pan/zoom smoothing, movement limits, dead zone, lead compensation
+- Hold last subject or return to wide shot when tracking is lost
 
-## What the workflow tries
+This filter applies a **digital crop**, not physical PTZ movement. Full-body HOG detection can be unreliable at distances, during occlusion, and in poorly lit venues.
 
-- Compile and execute the independent C++ framing/selection tests **on Windows**.
-- Obtain OBS's maintained Windows plugin template and build OBS's development dependencies.
-- Install the OpenCV 4 C++ libraries in a static x64 triplet with vcpkg, compile `src/plugin.cpp` into a native Windows OBS filter.
-- Check that the DLL has an MZ/PE header, then upload a native OBS plugin directory tree as a downloadable workflow artifact.
+## Downloading a Windows build (no programming tools on your PC)
 
-**Limitations:** A green CI build validates compilation and logic tests, not a live OBS instance. The OBS plugin template's master branch, OBS SDK dependencies, and vcpkg can evolve and may require build fixes. This is an *experimental build workflow*, not a guaranteed prebuilt download or tested plugin. The ONNX detector model is not bundled. The built-in HOG detector is only a limited fallback. The plugin digitally reframes a camera and does not physically pan a camera.
+1. Open [Actions → Build AutoFrame Windows DLL](https://github.com/newgenstudios12/OBS-autoframe/actions/workflows/build-windows.yml).
+2. Choose a run with a **green check mark** (successful). Failed/in-progress runs do not have a validated build.
+3. Download the `OBS-AutoFrame-Windows-x64-v0.2` artifact from that run's **Artifacts** section.
+4. Close OBS. Extract the artifact to `C:\ProgramData\obs-studio\plugins\obs-autoframe\`, preserving its `bin\64bit\obs-autoframe.dll` layout.
+5. Restart OBS. Right-click the camera source → **Filters** → **Effect Filters** → **+** → **AutoFrame (Full-Body Tracker) [Preview]**.
+6. If the filter is missing, check **OBS → Help → Log Files → View Current Log** for plugin load errors.
 
-Official OBS plugin template: https://github.com/obsproject/obs-plugintemplate
-Official OBS manual installation guidance: https://obsproject.com/kb/plugins-guide
+**Important:** A successful CI build verifies Windows compilation and framing unit tests, not actual camera tracking inside OBS. Windows runtime smoke-testing remains necessary before production livestream use.
+
+## Development
+
+The source is in `src/`, the CMake unit test is in `tests/`, and the Windows cloud build is defined in `.github/workflows/build-windows.yml`. To run just the portable logic tests:
+
+```sh
+cmake -S . -B build-tests -DAUTOFRAME_BUILD_FILTER=OFF -DBUILD_TESTING=ON
+cmake --build build-tests
+ctest --test-dir build-tests --output-on-failure
+```
+
+The Windows workflow builds OpenCV with vcpkg and integrates with the official [OBS plugin template](https://github.com/obsproject/obs-plugintemplate).
+
+### Origins & licensing
+
+An independent GPL-2.0-or-later implementation informed by [norihiro/obs-face-tracker](https://github.com/norihiro/obs-face-tracker). See `LICENSE`.
