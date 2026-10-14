@@ -25,7 +25,10 @@ $cmake = $cmake.Replace('src/plugin-main.c', 'src/plugin.cpp')
 $libobsLookup = @'
 # Explicit OBS CMake dependency discovery for the Windows template.
 # include(defaults) fetches OBS deps, but vcpkg's find_package shim can
-# miss these prefixes. Make every OBS dependency prefix available first.
+# miss these prefixes. Crucially, CMake package config files for both
+# libobs and w32-pthreads live directly inside .deps/cmake, so add .deps too.
+list(PREPEND CMAKE_PREFIX_PATH "${CMAKE_CURRENT_SOURCE_DIR}/.deps")
+message(STATUS "AutoFrame: added installed OBS SDK prefix: ${CMAKE_CURRENT_SOURCE_DIR}/.deps")
 file(GLOB _af_prefix_candidates LIST_DIRECTORIES true
      "${CMAKE_CURRENT_SOURCE_DIR}/.deps/obs-deps-*-x64")
 foreach(_af_prefix IN LISTS _af_prefix_candidates)
@@ -35,6 +38,18 @@ foreach(_af_prefix IN LISTS _af_prefix_candidates)
   endif()
 endforeach()
 list(REMOVE_DUPLICATES CMAKE_PREFIX_PATH)
+# Prefer the actual exported win32-threading package over a guessed path.
+file(GLOB_RECURSE _af_winthread_configs LIST_DIRECTORIES false
+     "${CMAKE_CURRENT_SOURCE_DIR}/.deps/*w32-pthreadsConfig.cmake"
+     "${CMAKE_CURRENT_SOURCE_DIR}/.deps/*w32-pthreads-config.cmake")
+if(_af_winthread_configs)
+  list(GET _af_winthread_configs 0 _af_thread_config)
+  get_filename_component(_af_thread_dir "${_af_thread_config}" DIRECTORY)
+  set("w32-pthreads_DIR" "${_af_thread_dir}" CACHE PATH "OBS w32-pthreads package location" FORCE)
+  message(STATUS "AutoFrame: found installed w32-pthreads SDK config: ${_af_thread_config}")
+else()
+  message(STATUS "AutoFrame: w32-pthreads config not found yet; possible incomplete OBS SDK installation")
+endif()
 # This runs after include(defaults), which provisions .deps.
 file(GLOB_RECURSE _af_obs_configs LIST_DIRECTORIES false
      "${CMAKE_CURRENT_SOURCE_DIR}/.deps/*libobsConfig.cmake"
